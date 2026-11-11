@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Locality Shop Tracker</title>
-    <!-- Leaflet CSS -->
+    <title>Multi-Town Shop Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: sans-serif; }
@@ -14,31 +13,21 @@
         .control-panel {
             position: absolute; top: 10px; right: 10px; z-index: 1000;
             background: rgba(255, 255, 255, 0.96); padding: 12px; border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 250px; font-size: 13px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 260px; font-size: 13px;
         }
-        .control-panel input, .control-panel button {
-            width: 100%; margin-top: 6px; padding: 8px; box-sizing: border-box;
+        .control-panel select, .control-panel input, .control-panel button {
+            width: 100%; margin-top: 5px; padding: 7px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc;
         }
-        .btn-primary { 
-            background: #007bff; color: white; border: none; border-radius: 4px; 
-            cursor: pointer; font-weight: bold; 
-        }
-        .btn-current-loc {
-            background: #17a2b8; color: white; border: none; border-radius: 4px;
-            cursor: pointer; font-size: 12px; font-weight: bold;
-        }
+        .btn-primary { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
+        .btn-current-loc { background: #17a2b8; color: white; border: none; font-size: 11px; font-weight: bold; cursor: pointer; }
         .status-text { color: #555; font-size: 11px; margin-top: 4px; display: block; }
 
-        /* Clickable Counter Badge */
         .counter-badge {
-            background: #ffc107; color: #212529; padding: 4px 9px;
+            background: #ffc107; color: #212529; padding: 4px 8px;
             border-radius: 12px; font-weight: bold; font-size: 12px;
-            display: inline-block; cursor: pointer; user-select: none;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
-        .counter-badge:active { transform: scale(0.96); }
 
-        /* Floating GPS Recenter Button */
         .gps-btn {
             position: absolute; bottom: 25px; right: 20px; z-index: 1000;
             background: white; border: none; border-radius: 50%;
@@ -47,7 +36,6 @@
             font-size: 22px; cursor: pointer;
         }
 
-        /* Tooltip Badges on Map */
         .shop-label-pending {
             background: #007bff !important; color: #fff !important;
             border: none !important; border-radius: 4px !important;
@@ -59,7 +47,7 @@
             border-radius: 4px !important; padding: 2px 6px !important; font-size: 11px !important;
         }
 
-        /* Pending Shops Modal / Popup */
+        /* Modal */
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.5); z-index: 2000;
@@ -74,29 +62,15 @@
             display: flex; justify-content: space-between; align-items: center;
             border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px;
         }
-        .modal-title { font-weight: bold; font-size: 15px; color: #333; }
-        .close-btn {
-            background: none; border: none; font-size: 18px; cursor: pointer; color: #888;
-        }
-        .shops-list {
-            overflow-y: auto; flex: 1; padding-right: 4px;
-        }
+        .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #888; }
+        .shops-list { overflow-y: auto; flex: 1; }
         .shop-item {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 9px 0; border-bottom: 1px solid #f0f0f0;
+            padding: 8px 0; border-bottom: 1px solid #f0f0f0;
         }
-        .shop-name-txt {
-            font-size: 13px; font-weight: 600; color: #222; flex: 1; word-break: break-word;
-        }
-        .item-actions { display: flex; gap: 6px; }
-        .btn-visit {
-            background: #28a745; color: white; border: none; padding: 5px 8px;
-            border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold;
-        }
-        .btn-locate {
-            background: #007bff; color: white; border: none; padding: 5px 8px;
-            border-radius: 4px; font-size: 11px; cursor: pointer;
-        }
+        .item-actions { display: flex; gap: 5px; }
+        .btn-visit { background: #28a745; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; }
+        .btn-locate { background: #007bff; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -104,162 +78,197 @@
     <div class="control-panel">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <b>Shop Tracker</b>
-            <span class="counter-badge" id="pendingCounter" onclick="openPendingList()" title="Click to view pending list">Left: 0</span>
+            <span class="counter-badge" id="pendingCounter" onclick="openPendingList()">Left: 0</span>
         </div>
-        <span class="status-text" id="targetStatus">📍 Tap map or use button below</span>
-        
-        <button type="button" class="btn-current-loc" onclick="useCurrentLocation()">📍 Use My Current Location</button>
+
+        <!-- Town Filter -->
+        <label style="font-size:11px; color:#555; margin-top:5px; display:block;">Select Town:</label>
+        <select id="townSelect" onchange="filterTown()">
+            <option value="ALL">🌐 All Towns</option>
+        </select>
+
+        <!-- Month Filter -->
+        <label style="font-size:11px; color:#555; margin-top:3px; display:block;">Visiting Month:</label>
+        <select id="monthSelect" onchange="changeMonth()">
+            <!-- Populated dynamically -->
+        </select>
+
+        <span class="status-text" id="targetStatus">📍 Tap map or use GPS button</span>
+        <button type="button" class="btn-current-loc" onclick="useCurrentLocation()">📍 Use Current Location</button>
+        <input type="text" id="newShopTown" placeholder="Town Name (e.g. Badvel)">
         <input type="text" id="shopName" placeholder="Shop Name">
         <button type="button" class="btn-primary" onclick="addShop()">Save Shop</button>
     </div>
 
-    <!-- Live GPS Recenter Button -->
     <button class="gps-btn" onclick="goToCurrentLocation()" title="Locate Me">🎯</button>
 
     <!-- Modal for Pending Shops List -->
-    <div id="pendingModal" class="modal-overlay" onclick="handleOverlayClick(event)">
+    <div id="pendingModal" class="modal-overlay" onclick="if(event.target.id==='pendingModal') closePendingList()">
         <div class="modal-content">
             <div class="modal-header">
-                <span class="modal-title">Pending Shops</span>
+                <span style="font-weight:bold;" id="modalTitle">Pending Shops</span>
                 <button class="close-btn" onclick="closePendingList()">✖</button>
             </div>
-            <div id="pendingListContainer" class="shops-list">
-                <!-- Dynamically populated -->
-            </div>
+            <div id="pendingListContainer" class="shops-list"></div>
         </div>
     </div>
 
     <div id="map"></div>
 
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby56s5REdRNvmJpkWGtIvy2dWWlOSjKZTCO388YvDUGzQEsUmXX9j9EviRBLrIadbWe/exec";
+        // PASTE YOUR SCRIPT URL HERE:
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwArZSg4A_iTuZX37AF110RHTnsaTYKrR24W2EQ6frIGH6yJmviMHRq8KKBjdxZ6gzG/exec";
 
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-            attribution: '© Google Maps'
+            maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps'
         });
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '© OpenStreetMap' });
 
-        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 20,
-            attribution: '© OpenStreetMap'
-        });
+        var map = L.map('map', { center: [14.7335, 79.0545], zoom: 15, layers: [googleHybrid] });
+        L.control.layers({ "🛰️ Hybrid": googleHybrid, "🗺️ Street": osm }, null, { position: 'topleft' }).addTo(map);
 
-        var map = L.map('map', {
-            center: [14.7335, 79.0545],
-            zoom: 16,
-            layers: [googleHybrid]
-        });
-
-        L.control.layers({ "🛰️ Satellite / Hybrid": googleHybrid, "🗺️ Street Map": osm }, null, { position: 'topleft' }).addTo(map);
-
-        let allShopsData = [];
+        let allShops = [];
         let shopMarkers = [];
-        let selectedLat = null;
-        let selectedLng = null;
-        let tempMarker = null;
-        let userCoords = null;
-        let userMarker = null;
+        let selectedLat = null, selectedLng = null, tempMarker = null;
+        let userCoords = null, userMarker = null;
+
+        // Current Month string (e.g. "2026-11")
+        const now = new Date();
+        let selectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
         const bluePin = new L.Icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
-
         const greyPin = new L.Icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
 
-        // 1. FETCH SHOPS & RENDER
-        function loadShops() {
-            fetch(SCRIPT_URL + "?action=getShops")
+        // 1. POPULATE MONTH OPTIONS (Includes Current + Past 5 Months)
+        function initMonthSelector() {
+            const mSelect = document.getElementById('monthSelect');
+            mSelect.innerHTML = "";
+            for (let i = 0; i < 6; i++) {
+                let d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                let mVal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                let mText = d.toLocaleString('default', { month: 'short', year: 'numeric' });
+                let opt = document.createElement("option");
+                opt.value = mVal;
+                opt.text = (i === 0) ? `${mText} (Current)` : mText;
+                mSelect.appendChild(opt);
+            }
+            mSelect.value = selectedMonth;
+        }
+        initMonthSelector();
+
+        function changeMonth() {
+            selectedMonth = document.getElementById('monthSelect').value;
+            loadData();
+        }
+
+        // 2. FETCH DATA FROM SCRIPT
+        function loadData() {
+            fetch(`${SCRIPT_URL}?action=getData&month=${selectedMonth}`)
             .then(res => res.json())
-            .then(shops => {
-                allShopsData = shops;
-                renderMapPins();
-                updatePendingCounter();
-                if (document.getElementById('pendingModal').style.display === "flex") {
-                    populatePendingList();
-                }
+            .then(data => {
+                allShops = data.shops;
+                
+                // Update town selector options
+                const tSelect = document.getElementById('townSelect');
+                const currTown = tSelect.value;
+                tSelect.innerHTML = `<option value="ALL">🌐 All Towns</option>`;
+                data.towns.forEach(t => {
+                    tSelect.innerHTML += `<option value="${t}">${t}</option>`;
+                });
+                if (data.towns.includes(currTown)) tSelect.value = currTown;
+
+                renderPins();
             });
         }
 
-        function renderMapPins() {
+        // 3. RENDER PINS FILTERED BY TOWN
+        function renderPins() {
             shopMarkers.forEach(m => map.removeLayer(m));
             shopMarkers = [];
 
-            allShopsData.forEach(shop => {
+            const selectedTown = document.getElementById('townSelect').value;
+            const filtered = (selectedTown === "ALL") ? allShops : allShops.filter(s => s.town === selectedTown);
+
+            let pendingCount = 0;
+            let bounds = [];
+
+            filtered.forEach(shop => {
                 const isVisited = (shop.status === "visited");
-                let pinIcon = isVisited ? greyPin : bluePin;
-                let labelClass = isVisited ? 'shop-label-visited' : 'shop-label-pending';
-                let toggleBtnText = isVisited ? '↩️ Mark Pending' : '✅ Mark Visited';
-                let toggleBtnColor = isVisited ? '#17a2b8' : '#28a745';
+                if (!isVisited) pendingCount++;
 
-                let popupContent = `<b>${shop.name}</b><br>` +
-                                   `Status: <b>${shop.status.toUpperCase()}</b><br><br>` +
+                let marker = L.marker([shop.lat, shop.lng], { icon: isVisited ? greyPin : bluePin }).addTo(map);
+                marker.shopId = shop.id;
+
+                let popupContent = `<b>${shop.name}</b><br><small>Town: ${shop.town}</small><br>` +
+                                   `Status (${selectedMonth}): <b>${shop.status.toUpperCase()}</b><br><br>` +
                                    `<a href="${shop.link}" target="_blank">🗺️ Open in Google Maps</a><br><br>` +
-                                   `<button onclick="toggleShopStatus('${shop.id}')" style="background:${toggleBtnColor};color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:6px;">${toggleBtnText}</button>` +
+                                   `<button onclick="toggleStatus('${shop.id}')" style="background:${isVisited ? '#17a2b8' : '#28a745'};color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:5px;">${isVisited ? '↩️ Mark Pending' : '✅ Mark Visited'}</button>` +
                                    `<button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;">🗑️ Delete Shop</button>`;
-                
-                let marker = L.marker([shop.lat, shop.lng], { icon: pinIcon }).addTo(map).bindPopup(popupContent);
 
-                marker.bindTooltip(shop.name, {
-                    permanent: true,
-                    direction: 'bottom',
-                    className: labelClass,
-                    offset: [0, 8]
+                marker.bindPopup(popupContent);
+                marker.bindTooltip(`[${shop.town}] ${shop.name}`, {
+                    permanent: true, direction: 'bottom',
+                    className: isVisited ? 'shop-label-visited' : 'shop-label-pending', offset: [0, 8]
                 });
 
-                // Attach shop ID to marker for easy lookup
-                marker.shopId = shop.id;
                 shopMarkers.push(marker);
+                bounds.push([shop.lat, shop.lng]);
             });
-        }
 
-        function updatePendingCounter() {
-            const pendingCount = allShopsData.filter(s => s.status !== "visited").length;
             document.getElementById('pendingCounter').innerText = `Left: ${pendingCount}`;
+            
+            // Auto zoom to town's shops if a specific town is selected
+            if (selectedTown !== "ALL" && bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+            }
         }
 
-        // 2. MODAL LOGIC FOR "LEFT: X"
+        function filterTown() {
+            const selectedTown = document.getElementById('townSelect').value;
+            if (selectedTown !== "ALL") {
+                document.getElementById('newShopTown').value = selectedTown;
+            }
+            renderPins();
+        }
+
+        // 4. POPUP LIST FOR PENDING SHOPS
         function openPendingList() {
-            populatePendingList();
+            const selectedTown = document.getElementById('townSelect').value;
+            const filtered = (selectedTown === "ALL") ? allShops : allShops.filter(s => s.town === selectedTown);
+            const pendingShops = filtered.filter(s => s.status !== "visited");
+
+            document.getElementById('modalTitle').innerText = `Pending Shops (${selectedMonth})`;
+            const container = document.getElementById('pendingListContainer');
+
+            if (pendingShops.length === 0) {
+                container.innerHTML = `<div style="text-align:center; padding:20px; color:#28a745; font-weight:bold;">🎉 All shops completed for this town &amp; month!</div>`;
+            } else {
+                container.innerHTML = pendingShops.map(shop => `
+                    <div class="shop-item">
+                        <div>
+                            <span style="font-weight:bold; font-size:13px;">${shop.name}</span><br>
+                            <small style="color:#777;">${shop.town}</small>
+                        </div>
+                        <div class="item-actions">
+                            <button class="btn-locate" onclick="focusShop(${shop.lat}, ${shop.lng}, '${shop.id}')">🎯</button>
+                            <button class="btn-visit" onclick="toggleStatus('${shop.id}')">✅ Visited</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
             document.getElementById('pendingModal').style.display = "flex";
         }
 
-        function closePendingList() {
-            document.getElementById('pendingModal').style.display = "none";
-        }
-
-        function handleOverlayClick(e) {
-            if (e.target.id === "pendingModal") closePendingList();
-        }
-
-        function populatePendingList() {
-            const container = document.getElementById('pendingListContainer');
-            const pendingShops = allShopsData.filter(s => s.status !== "visited");
-
-            if (pendingShops.length === 0) {
-                container.innerHTML = `<div style="text-align:center; padding: 20px; color:#28a745; font-weight:bold;">🎉 All shops have been visited!</div>`;
-                return;
-            }
-
-            container.innerHTML = pendingShops.map(shop => `
-                <div class="shop-item">
-                    <span class="shop-name-txt">${shop.name}</span>
-                    <div class="item-actions">
-                        <button class="btn-locate" onclick="focusShop(${shop.lat}, ${shop.lng}, '${shop.id}')">🎯</button>
-                        <button class="btn-visit" onclick="toggleShopStatus('${shop.id}')">✅ Visited</button>
-                    </div>
-                </div>
-            `).join('');
-        }
+        function closePendingList() { document.getElementById('pendingModal').style.display = "none"; }
 
         function focusShop(lat, lng, id) {
             closePendingList();
@@ -268,126 +277,98 @@
             if (targetMarker) targetMarker.openPopup();
         }
 
-        // 3. ADD CURRENT LOCATION / MANUAL CLICK
+        // 5. ACTIONS: ADD, TOGGLE, DELETE
         function useCurrentLocation() {
             if (userCoords) {
                 selectedLat = userCoords[0];
                 selectedLng = userCoords[1];
-
                 if (tempMarker) map.removeLayer(tempMarker);
-
                 tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
-                document.getElementById('targetStatus').innerHTML = `✅ Current GPS locked!`;
+                document.getElementById('targetStatus').innerHTML = `✅ GPS locked!`;
                 document.getElementById('targetStatus').style.color = "#28a745";
             } else {
-                alert("Acquiring GPS location... Please ensure device location is on.");
+                alert("Acquiring GPS location... Check device location.");
             }
         }
 
         map.on('click', function(e) {
             selectedLat = e.latlng.lat;
             selectedLng = e.latlng.lng;
-
             if (tempMarker) map.removeLayer(tempMarker);
-
             tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
             document.getElementById('targetStatus').innerHTML = `✅ Point selected!`;
             document.getElementById('targetStatus').style.color = "#28a745";
         });
 
-        // 4. ADD SHOP
         function addShop() {
+            let town = document.getElementById('newShopTown').value.trim();
             let name = document.getElementById('shopName').value.trim();
-
-            if (!name) {
-                alert("Please enter a shop name!");
-                return;
-            }
-            if (!selectedLat || !selectedLng) {
-                alert("Please click 'Use My Current Location' or tap a spot on the map!");
-                return;
-            }
+            if (!town || !name) { alert("Please provide both Town and Shop Name!"); return; }
+            if (!selectedLat || !selectedLng) { alert("Please select a location first!"); return; }
 
             let link = `https://maps.google.com/?q=${selectedLat},${selectedLng}`;
 
             fetch(SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify({ action: "addShop", name: name, lat: selectedLat, lng: selectedLng, link: link })
+                body: JSON.stringify({ action: "addShop", town: town, name: name, lat: selectedLat, lng: selectedLng, link: link })
             })
             .then(res => res.json())
             .then(data => {
                 if(data.status === "success") {
                     document.getElementById('shopName').value = "";
-                    document.getElementById('targetStatus').innerHTML = "📍 Tap map or use button below";
+                    document.getElementById('targetStatus').innerHTML = "📍 Tap map or use GPS button";
                     document.getElementById('targetStatus').style.color = "#555";
-                    
-                    if (tempMarker) {
-                        map.removeLayer(tempMarker);
-                        tempMarker = null;
-                    }
-                    selectedLat = null;
-                    selectedLng = null;
-                    loadShops();
+                    if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+                    selectedLat = null; selectedLng = null;
+                    loadData();
                 }
             });
         }
 
-        // 5. TOGGLE STATUS (From Map or Popup)
-        function toggleShopStatus(id) {
+        function toggleStatus(shopId) {
             fetch(SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify({ action: "toggleStatus", id: id })
+                body: JSON.stringify({ action: "toggleStatus", shopId: shopId, month: selectedMonth })
             })
             .then(res => res.json())
             .then(data => {
                 if(data.status === "success") {
-                    loadShops();
+                    loadData();
                 }
             });
         }
 
-        // 6. DELETE SHOP
-        function deleteShop(id) {
-            if(confirm("Are you sure you want to delete this shop?")) {
+        function deleteShop(shopId) {
+            if(confirm("Delete this shop permanently?")) {
                 fetch(SCRIPT_URL, {
                     method: "POST",
-                    body: JSON.stringify({ action: "deleteShop", id: id })
+                    body: JSON.stringify({ action: "deleteShop", shopId: shopId })
                 })
                 .then(res => res.json())
                 .then(data => {
-                    if(data.status === "success") {
-                        loadShops();
-                    }
+                    if(data.status === "success") loadData();
                 });
             }
         }
 
-        // 7. GPS TRACKING
+        // 6. GPS TRACKING
         if (navigator.geolocation) {
-            navigator.geolocation.watchPosition(function(position) {
-                userCoords = [position.coords.latitude, position.coords.longitude];
-
+            navigator.geolocation.watchPosition(function(pos) {
+                userCoords = [pos.coords.latitude, pos.coords.longitude];
                 if (!userMarker) {
-                    userMarker = L.circleMarker(userCoords, {
-                        radius: 8, fillColor: "#007bff", color: "#ffffff", weight: 3, opacity: 1, fillOpacity: 0.95
-                    }).addTo(map).bindPopup("You are here");
+                    userMarker = L.circleMarker(userCoords, { radius: 8, fillColor: "#007bff", color: "#fff", weight: 3, opacity: 1, fillOpacity: 0.95 }).addTo(map).bindPopup("You are here");
                 } else {
                     userMarker.setLatLng(userCoords);
                 }
-            }, function(err) {
-                console.log("GPS Location Error: " + err.message);
-            }, { enableHighAccuracy: true });
+            }, null, { enableHighAccuracy: true });
         }
 
         function goToCurrentLocation() {
-            if (userCoords) {
-                map.flyTo(userCoords, 18, { animate: true, duration: 1.2 });
-            } else {
-                alert("Acquiring GPS location... Make sure Location/GPS is turned on!");
-            }
+            if (userCoords) map.flyTo(userCoords, 18, { animate: true, duration: 1.2 });
+            else alert("Acquiring GPS location...");
         }
 
-        loadShops();
+        loadData();
     </script>
 </body>
 </html>
