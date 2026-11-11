@@ -9,13 +9,41 @@
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: sans-serif; }
         #map { height: 100vh; width: 100vw; }
 
-        /* Floating Input Dashboard */
+        /* Floating Collapsible Dashboard */
         .control-panel {
             position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: rgba(255, 255, 255, 0.96); padding: 12px; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.96); border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 260px; font-size: 13px;
+            overflow: hidden; transition: all 0.25s ease-in-out;
         }
-        .control-panel select, .control-panel input, .control-panel button {
+
+        .panel-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 12px; cursor: pointer; user-select: none;
+            background: #fff;
+        }
+
+        .panel-body {
+            padding: 0 12px 12px 12px;
+            transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+            max-height: 500px;
+            opacity: 1;
+        }
+
+        /* Collapsed State */
+        .control-panel.collapsed .panel-body {
+            max-height: 0;
+            opacity: 0;
+            padding-bottom: 0;
+            pointer-events: none;
+        }
+
+        .toggle-btn {
+            background: none; border: none; font-size: 14px;
+            cursor: pointer; color: #555; padding: 0 4px;
+        }
+
+        .control-panel select, .control-panel input, .control-panel button.action-btn {
             width: 100%; margin-top: 5px; padding: 7px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc;
         }
         .btn-primary { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
@@ -26,6 +54,7 @@
             background: #ffc107; color: #212529; padding: 4px 8px;
             border-radius: 12px; font-weight: bold; font-size: 12px;
             cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            margin-right: 4px;
         }
 
         .gps-btn {
@@ -75,29 +104,33 @@
 </head>
 <body>
 
-    <div class="control-panel">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="control-panel" id="mainPanel">
+        <!-- Always Visible Collapsible Header -->
+        <div class="panel-header" onclick="togglePanel(event)">
             <b>Shop Tracker</b>
-            <span class="counter-badge" id="pendingCounter" onclick="openPendingList()">Left: 0</span>
+            <div style="display:flex; align-items:center;">
+                <span class="counter-badge" id="pendingCounter" onclick="openPendingList(event)">Left: 0</span>
+                <button type="button" class="toggle-btn" id="collapseArrow">▲</button>
+            </div>
         </div>
 
-        <!-- Town Filter -->
-        <label style="font-size:11px; color:#555; margin-top:5px; display:block;">Select Town:</label>
-        <select id="townSelect" onchange="filterTown()">
-            <option value="ALL">🌐 All Towns</option>
-        </select>
+        <!-- Collapsible Content -->
+        <div class="panel-body" id="panelBody">
+            <label style="font-size:11px; color:#555; margin-top:5px; display:block;">Select Town:</label>
+            <select id="townSelect" onchange="filterTown()">
+                <option value="ALL">🌐 All Towns</option>
+            </select>
 
-        <!-- Month Filter -->
-        <label style="font-size:11px; color:#555; margin-top:3px; display:block;">Visiting Month:</label>
-        <select id="monthSelect" onchange="changeMonth()">
-            <!-- Populated dynamically -->
-        </select>
+            <label style="font-size:11px; color:#555; margin-top:3px; display:block;">Visiting Month:</label>
+            <select id="monthSelect" onchange="changeMonth()">
+            </select>
 
-        <span class="status-text" id="targetStatus">📍 Tap map or use GPS button</span>
-        <button type="button" class="btn-current-loc" onclick="useCurrentLocation()">📍 Use Current Location</button>
-        <input type="text" id="newShopTown" placeholder="Town Name (e.g. Badvel)">
-        <input type="text" id="shopName" placeholder="Shop Name">
-        <button type="button" class="btn-primary" onclick="addShop()">Save Shop</button>
+            <span class="status-text" id="targetStatus">📍 Tap map or use GPS button</span>
+            <button type="button" class="btn-current-loc action-btn" onclick="useCurrentLocation()">📍 Use Current Location</button>
+            <input type="text" id="newShopTown" placeholder="Town Name (e.g. Badvel)">
+            <input type="text" id="shopName" placeholder="Shop Name">
+            <button type="button" class="btn-primary action-btn" onclick="addShop()">Save Shop</button>
+        </div>
     </div>
 
     <button class="gps-btn" onclick="goToCurrentLocation()" title="Locate Me">🎯</button>
@@ -133,7 +166,6 @@
         let selectedLat = null, selectedLng = null, tempMarker = null;
         let userCoords = null, userMarker = null;
 
-        // Current Month string (e.g. "2026-11")
         const now = new Date();
         let selectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
@@ -148,7 +180,22 @@
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
 
-        // 1. POPULATE MONTH OPTIONS (Includes Current + Past 5 Months)
+        // TOGGLE COLLAPSE LOGIC
+        function togglePanel(e) {
+            if (e && e.target.id === 'pendingCounter') return; // Don't collapse if clicking the counter badge
+            const panel = document.getElementById('mainPanel');
+            const arrow = document.getElementById('collapseArrow');
+            panel.classList.toggle('collapsed');
+            arrow.innerHTML = panel.classList.contains('collapsed') ? '▼' : '▲';
+        }
+
+        function expandPanel() {
+            const panel = document.getElementById('mainPanel');
+            panel.classList.remove('collapsed');
+            document.getElementById('collapseArrow').innerHTML = '▲';
+        }
+
+        // MONTH SELECTOR
         function initMonthSelector() {
             const mSelect = document.getElementById('monthSelect');
             mSelect.innerHTML = "";
@@ -170,14 +217,13 @@
             loadData();
         }
 
-        // 2. FETCH DATA FROM SCRIPT
+        // FETCH DATA
         function loadData() {
             fetch(`${SCRIPT_URL}?action=getData&month=${selectedMonth}`)
             .then(res => res.json())
             .then(data => {
                 allShops = data.shops;
                 
-                // Update town selector options
                 const tSelect = document.getElementById('townSelect');
                 const currTown = tSelect.value;
                 tSelect.innerHTML = `<option value="ALL">🌐 All Towns</option>`;
@@ -190,7 +236,7 @@
             });
         }
 
-        // 3. RENDER PINS FILTERED BY TOWN
+        // RENDER PINS
         function renderPins() {
             shopMarkers.forEach(m => map.removeLayer(m));
             shopMarkers = [];
@@ -226,7 +272,6 @@
 
             document.getElementById('pendingCounter').innerText = `Left: ${pendingCount}`;
             
-            // Auto zoom to town's shops if a specific town is selected
             if (selectedTown !== "ALL" && bounds.length > 0) {
                 map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
             }
@@ -240,8 +285,9 @@
             renderPins();
         }
 
-        // 4. POPUP LIST FOR PENDING SHOPS
-        function openPendingList() {
+        // PENDING MODAL
+        function openPendingList(e) {
+            if (e) e.stopPropagation();
             const selectedTown = document.getElementById('townSelect').value;
             const filtered = (selectedTown === "ALL") ? allShops : allShops.filter(s => s.town === selectedTown);
             const pendingShops = filtered.filter(s => s.status !== "visited");
@@ -250,7 +296,7 @@
             const container = document.getElementById('pendingListContainer');
 
             if (pendingShops.length === 0) {
-                container.innerHTML = `<div style="text-align:center; padding:20px; color:#28a745; font-weight:bold;">🎉 All shops completed for this town &amp; month!</div>`;
+                container.innerHTML = `<div style="text-align:center; padding:20px; color:#28a745; font-weight:bold;">🎉 All shops completed for this month!</div>`;
             } else {
                 container.innerHTML = pendingShops.map(shop => `
                     <div class="shop-item">
@@ -277,7 +323,7 @@
             if (targetMarker) targetMarker.openPopup();
         }
 
-        // 5. ACTIONS: ADD, TOGGLE, DELETE
+        // ADD, TOGGLE, DELETE
         function useCurrentLocation() {
             if (userCoords) {
                 selectedLat = userCoords[0];
@@ -286,6 +332,7 @@
                 tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
                 document.getElementById('targetStatus').innerHTML = `✅ GPS locked!`;
                 document.getElementById('targetStatus').style.color = "#28a745";
+                expandPanel();
             } else {
                 alert("Acquiring GPS location... Check device location.");
             }
@@ -298,6 +345,7 @@
             tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
             document.getElementById('targetStatus').innerHTML = `✅ Point selected!`;
             document.getElementById('targetStatus').style.color = "#28a745";
+            expandPanel();
         });
 
         function addShop() {
@@ -320,6 +368,9 @@
                     document.getElementById('targetStatus').style.color = "#555";
                     if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
                     selectedLat = null; selectedLng = null;
+                    
+                    // Collapse back down after saving to give you full screen view
+                    togglePanel();
                     loadData();
                 }
             });
@@ -351,7 +402,7 @@
             }
         }
 
-        // 6. GPS TRACKING
+        // GPS RECENTER
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(pos) {
                 userCoords = [pos.coords.latitude, pos.coords.longitude];
