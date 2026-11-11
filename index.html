@@ -39,7 +39,6 @@
             opacity: 1;
         }
 
-        /* Collapsed State */
         .control-panel.collapsed .panel-body {
             max-height: 0;
             opacity: 0;
@@ -100,30 +99,42 @@
             display: flex; gap: 5px; margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px;
         }
 
-        /* Modal */
+        /* Modal Styles */
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.5); z-index: 2000;
             justify-content: center; align-items: center;
         }
         .modal-content {
-            background: white; width: 88%; max-width: 360px; max-height: 75vh;
-            border-radius: 10px; padding: 16px; box-sizing: border-box;
+            background: white; width: 92%; max-width: 380px; max-height: 80vh;
+            border-radius: 10px; padding: 14px; box-sizing: border-box;
             display: flex; flex-direction: column; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
         }
         .modal-header {
             display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px;
+            border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 8px;
         }
         .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #888; }
+        
+        .modal-search {
+            width: 100%; padding: 7px 10px; margin-bottom: 8px; box-sizing: border-box;
+            border: 1px solid #ddd; border-radius: 6px; font-size: 12px;
+        }
+
         .shops-list { overflow-y: auto; flex: 1; }
         .shop-item {
             display: flex; justify-content: space-between; align-items: center;
             padding: 8px 0; border-bottom: 1px solid #f0f0f0;
         }
-        .item-actions { display: flex; gap: 5px; }
+        .item-actions { display: flex; gap: 4px; }
         .btn-visit { background: #28a745; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold; }
-        .btn-locate { background: #007bff; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+        .btn-locate { background: #007bff; color: white; border: none; padding: 5px 7px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+        .btn-nav-direct { background: #17a2b8; color: white; text-decoration: none; padding: 5px 7px; border-radius: 4px; font-size: 11px; display: flex; align-items: center; }
+        
+        .nearest-badge {
+            background: #28a745; color: white; font-size: 9px; padding: 1px 4px;
+            border-radius: 3px; font-weight: bold; margin-left: 4px; vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -165,13 +176,14 @@
     <!-- Live GPS Recenter Button -->
     <button class="gps-btn" onclick="goToCurrentLocation()" title="Locate Me">🎯</button>
 
-    <!-- Modal for Pending Shops List -->
+    <!-- Modal for Sorted Pending Shops List -->
     <div id="pendingModal" class="modal-overlay" onclick="if(event.target.id==='pendingModal') closePendingList()">
         <div class="modal-content">
             <div class="modal-header">
-                <span style="font-weight:bold;" id="modalTitle">Pending Shops</span>
+                <span style="font-weight:bold; font-size:13px;" id="modalTitle">Pending Shops (Nearest First)</span>
                 <button class="close-btn" onclick="closePendingList()">✖</button>
             </div>
+            <input type="text" id="modalSearchInput" class="modal-search" placeholder="🔍 Search shop name..." oninput="filterModalList()">
             <div id="pendingListContainer" class="shops-list"></div>
         </div>
     </div>
@@ -224,17 +236,21 @@
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
 
-        function getDistanceText(shopLat, shopLng) {
-            if (!userCoords) return "Distance unavailable (waiting for GPS)";
-            let from = L.latLng(userCoords[0], userCoords[1]);
-            let to = L.latLng(shopLat, shopLng);
-            let meters = from.distanceTo(to);
+        // GEODESIC DISTANCE CALCULATIONS
+        function getRawMeters(shopLat, shopLng) {
+            if (!userCoords) return Infinity;
+            return L.latLng(userCoords[0], userCoords[1]).distanceTo(L.latLng(shopLat, shopLng));
+        }
+
+        function formatDistance(meters) {
+            if (meters === Infinity || isNaN(meters)) return "Distance unavailable";
             return (meters < 1000) ? `${Math.round(meters)} m away` : `${(meters / 1000).toFixed(2)} km away`;
         }
 
         function buildPopupContent(shop) {
             const isVisited = (shop.status === "visited");
-            const distText = getDistanceText(shop.lat, shop.lng);
+            const meters = getRawMeters(shop.lat, shop.lng);
+            const distText = formatDistance(meters);
             
             let dirLink = userCoords 
                 ? `https://www.google.com/maps/dir/?api=1&origin=${userCoords[0]},${userCoords[1]}&destination=${shop.lat},${shop.lng}`
@@ -357,41 +373,72 @@
             renderPins();
         }
 
+        // PENDING MODAL WITH DISTANCE SORTING
         function openPendingList(e) {
             if (e) e.stopPropagation();
+            document.getElementById('modalSearchInput').value = "";
             populatePendingList();
             document.getElementById('pendingModal').style.display = "flex";
         }
 
-        function closePendingList() { document.getElementById('pendingModal').style.display = "none"; }
+        function closePendingList() { 
+            document.getElementById('pendingModal').style.display = "none"; 
+        }
 
         function populatePendingList() {
             const selectedTown = document.getElementById('townSelect').value;
+            const searchTerm = (document.getElementById('modalSearchInput').value || "").trim().toLowerCase();
             const filtered = (selectedTown === "ALL") ? allShops : allShops.filter(s => s.town === selectedTown);
-            const pendingShops = filtered.filter(s => s.status !== "visited");
+            
+            let pendingShops = filtered.filter(s => s.status !== "visited");
 
-            document.getElementById('modalTitle').innerText = `Pending Shops (${selectedMonth})`;
+            // Attach dynamic distance meters to each shop
+            pendingShops.forEach(s => {
+                s.distanceMeters = getRawMeters(s.lat, s.lng);
+            });
+
+            // Sort ascending by distance (nearest to farthest)
+            pendingShops.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+            // Filter if user typed in search bar
+            if (searchTerm) {
+                pendingShops = pendingShops.filter(s => s.name.toLowerCase().includes(searchTerm) || s.town.toLowerCase().includes(searchTerm));
+            }
+
             const container = document.getElementById('pendingListContainer');
 
             if (pendingShops.length === 0) {
-                container.innerHTML = `<div style="text-align:center; padding:20px; color:#28a745; font-weight:bold;">🎉 All shops completed for this month!</div>`;
-            } else {
-                container.innerHTML = pendingShops.map(shop => {
-                    const distText = getDistanceText(shop.lat, shop.lng);
-                    return `
-                        <div class="shop-item">
-                            <div>
-                                <span style="font-weight:bold; font-size:13px;">${shop.name}</span><br>
-                                <small style="color:#777;">${shop.town} • <b style="color:#007bff;">${distText}</b></small>
-                            </div>
-                            <div class="item-actions">
-                                <button class="btn-locate" onclick="focusShop(${shop.lat}, ${shop.lng}, '${shop.id}')">🎯</button>
-                                <button class="btn-visit" onclick="toggleStatus('${shop.id}')">✅ Visited</button>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+                container.innerHTML = `<div style="text-align:center; padding:20px; color:#28a745; font-weight:bold;">🎉 No pending shops found!</div>`;
+                return;
             }
+
+            container.innerHTML = pendingShops.map((shop, index) => {
+                const distText = formatDistance(shop.distanceMeters);
+                const isNearest = (index === 0 && shop.distanceMeters !== Infinity && !searchTerm);
+                
+                let dirLink = userCoords 
+                    ? `https://www.google.com/maps/dir/?api=1&origin=${userCoords[0]},${userCoords[1]}&destination=${shop.lat},${shop.lng}`
+                    : `https://www.google.com/maps/dir/?api=1&destination=${shop.lat},${shop.lng}`;
+
+                return `
+                    <div class="shop-item">
+                        <div style="flex:1; padding-right:6px;">
+                            <span style="font-weight:bold; font-size:13px;">${shop.name}</span>
+                            ${isNearest ? '<span class="nearest-badge">⚡ Nearest</span>' : ''}<br>
+                            <small style="color:#777;">${shop.town} • <b style="color:#007bff;">${distText}</b></small>
+                        </div>
+                        <div class="item-actions">
+                            <a href="${dirLink}" target="_blank" class="btn-nav-direct" title="Navigate in Google Maps">🧭</a>
+                            <button class="btn-locate" onclick="focusShop(${shop.lat}, ${shop.lng}, '${shop.id}')" title="Locate on Map">🎯</button>
+                            <button class="btn-visit" onclick="toggleStatus('${shop.id}')">✅ Visited</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function filterModalList() {
+            populatePendingList();
         }
 
         function focusShop(lat, lng, id) {
@@ -403,6 +450,7 @@
             }
         }
 
+        // GPS LOCATION & RECENTER
         function useCurrentLocation() {
             if (userCoords) {
                 selectedLat = userCoords[0];
@@ -496,7 +544,7 @@
             }
         }
 
-        // ================= EXPORT & IMPORT =================
+        // EXPORT & IMPORT
         function exportTownShops() {
             const selectedTown = document.getElementById('townSelect').value;
             const exportData = (selectedTown === "ALL") 
@@ -508,7 +556,6 @@
                 return;
             }
 
-            // Export pure essential mapping details (independent of month visits)
             const cleanExport = exportData.map(s => ({
                 town: s.town,
                 name: s.name,
@@ -565,12 +612,12 @@
                 } catch (err) {
                     alert("Error reading file! Please ensure it is a valid exported JSON file.");
                 }
-                event.target.value = ""; // Reset file input
+                event.target.value = "";
             };
             reader.readAsText(file);
         }
 
-        // ================= GPS TRACKING =================
+        // CONTINUOUS GPS WATCH
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(pos) {
                 userCoords = [pos.coords.latitude, pos.coords.longitude];
