@@ -13,18 +13,27 @@
         /* Floating Input Dashboard */
         .control-panel {
             position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.96); padding: 12px; border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 250px; font-size: 13px;
         }
         .control-panel input, .control-panel button {
             width: 100%; margin-top: 6px; padding: 8px; box-sizing: border-box;
         }
-        .control-panel button { 
+        .btn-primary { 
             background: #007bff; color: white; border: none; border-radius: 4px; 
             cursor: pointer; font-weight: bold; 
         }
-        .control-panel button:hover { background: #0056b3; }
+        .btn-current-loc {
+            background: #17a2b8; color: white; border: none; border-radius: 4px;
+            cursor: pointer; font-size: 12px; font-weight: bold;
+        }
         .status-text { color: #555; font-size: 11px; margin-top: 4px; display: block; }
+
+        /* Counter Badge */
+        .counter-badge {
+            background: #ffc107; color: #212529; padding: 3px 7px;
+            border-radius: 12px; font-weight: bold; font-size: 11px; display: inline-block;
+        }
 
         /* Floating GPS Recenter Button */
         .gps-btn {
@@ -34,32 +43,32 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 22px; cursor: pointer;
         }
-        .gps-btn:active { background: #e0e0e0; }
 
-        /* Custom Permanent Label on Pins */
-        .shop-label {
-            background: rgba(0, 0, 0, 0.8) !important;
-            color: #fff !important;
-            border: none !important;
-            border-radius: 4px !important;
-            padding: 2px 6px !important;
-            font-size: 11px !important;
-            font-weight: bold !important;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+        /* Permanent Tooltip Badges */
+        .shop-label-pending {
+            background: #007bff !important; color: #fff !important;
+            border: none !important; border-radius: 4px !important;
+            padding: 2px 6px !important; font-size: 11px !important; font-weight: bold !important;
         }
-        .leaflet-tooltip-bottom:before {
-            border-bottom-color: rgba(0, 0, 0, 0.8) !important;
+        .shop-label-visited {
+            background: #6c757d !important; color: #d6d6d6 !important;
+            text-decoration: line-through; border: none !important;
+            border-radius: 4px !important; padding: 2px 6px !important; font-size: 11px !important;
         }
     </style>
 </head>
 <body>
 
     <div class="control-panel">
-        <b>Shop Mapper</b><br>
-        <span class="status-text" id="targetStatus">📍 Tap map to select location</span>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <b>Shop Tracker</b>
+            <span class="counter-badge" id="pendingCounter">Left: 0</span>
+        </div>
+        <span class="status-text" id="targetStatus">📍 Tap map or use button below</span>
+        
+        <button type="button" class="btn-current-loc" onclick="useCurrentLocation()">📍 Use My Current Location</button>
         <input type="text" id="shopName" placeholder="Shop Name">
-        <input type="text" id="shopLink" placeholder="Or paste Maps Link (Optional)">
-        <button onclick="addShop()">Save Shop</button>
+        <button type="button" class="btn-primary" onclick="addShop()">Save Shop</button>
     </div>
 
     <!-- Live GPS Recenter Button -->
@@ -71,35 +80,28 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwrFXO0nyEIlaS86O60GvzKDrl1Fxm8K3n6glruXNTSUcSjUr__mbhxyFFru8_JTfYf/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby56s5REdRNvmJpkWGtIvy2dWWlOSjKZTCO388YvDUGzQEsUmXX9j9EviRBLrIadbWe/exec";
 
-        // 1. BASE MAP LAYERS
-        // OpenStreetMap (Standard Street Map)
-        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 20,
-            attribution: '© OpenStreetMap'
-        });
-
-        // Google Hybrid (Satellite Imagery + Street Labels)
+        // Hybrid Tile Layer
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 20,
             subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
             attribution: '© Google Maps'
         });
 
-        // Initialize map with Google Hybrid by default
+        // OpenStreetMap Tile Layer
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 20,
+            attribution: '© OpenStreetMap'
+        });
+
         var map = L.map('map', {
-            center: [14.7335, 79.0545], // Badvel town area center coordinates
+            center: [14.7335, 79.0545],
             zoom: 16,
             layers: [googleHybrid]
         });
 
-        // Layer Switcher Control (Top-Left toggle)
-        const baseMaps = {
-            "🛰️ Satellite / Hybrid": googleHybrid,
-            "🗺️ Street Map": osm
-        };
-        L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
+        L.control.layers({ "🛰️ Satellite / Hybrid": googleHybrid, "🗺️ Street Map": osm }, null, { position: 'topleft' }).addTo(map);
 
         let shopMarkers = [];
         let selectedLat = null;
@@ -108,84 +110,112 @@
         let userCoords = null;
         let userMarker = null;
 
-        // 2. FETCH AND DISPLAY SAVED SHOPS WITH PERMANENT LABELS
+        // Leaflet Custom Pin Icons (Blue for Pending, Grey for Visited)
+        const bluePin = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+        });
+
+        const greyPin = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+        });
+
+        // 1. FETCH SHOPS & UPDATE COUNTER
         function loadShops() {
             fetch(SCRIPT_URL + "?action=getShops")
-            .then(response => response.json())
+            .then(res => res.json())
             .then(shops => {
                 shopMarkers.forEach(m => map.removeLayer(m));
                 shopMarkers = [];
 
-                shops.forEach(shop => {
-                    let popupContent = `<b>${shop.name}</b><br><br>` +
-                                       `<a href="${shop.link}" target="_blank">🗺️ Open in Google Maps</a><br><br>` +
-                                       `<button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">Delete Shop</button>`;
-                    
-                    let marker = L.marker([shop.lat, shop.lng]).addTo(map).bindPopup(popupContent);
+                let pendingCount = 0;
 
-                    // Add visible shop name directly on/below pin
+                shops.forEach(shop => {
+                    const isVisited = (shop.status === "visited");
+                    if (!isVisited) pendingCount++;
+
+                    let pinIcon = isVisited ? greyPin : bluePin;
+                    let labelClass = isVisited ? 'shop-label-visited' : 'shop-label-pending';
+                    let toggleBtnText = isVisited ? '↩️ Mark Pending' : '✅ Mark Visited';
+                    let toggleBtnColor = isVisited ? '#17a2b8' : '#28a745';
+
+                    let popupContent = `<b>${shop.name}</b><br>` +
+                                       `Status: <b>${shop.status.toUpperCase()}</b><br><br>` +
+                                       `<a href="${shop.link}" target="_blank">🗺️ Open in Google Maps</a><br><br>` +
+                                       `<button onclick="toggleShopStatus('${shop.id}')" style="background:${toggleBtnColor};color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:6px;">${toggleBtnText}</button>` +
+                                       `<button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;">🗑️ Delete Shop</button>`;
+                    
+                    let marker = L.marker([shop.lat, shop.lng], { icon: pinIcon }).addTo(map).bindPopup(popupContent);
+
                     marker.bindTooltip(shop.name, {
                         permanent: true,
                         direction: 'bottom',
-                        className: 'shop-label',
+                        className: labelClass,
                         offset: [0, 8]
                     });
 
                     shopMarkers.push(marker);
                 });
+
+                document.getElementById('pendingCounter').innerText = `Left: ${pendingCount}`;
             });
         }
 
-        // Tap on map to set spot
+        // 2. ADD CURRENT LOCATION DIRECTLY WITHOUT TAPPING
+        function useCurrentLocation() {
+            if (userCoords) {
+                selectedLat = userCoords[0];
+                selectedLng = userCoords[1];
+
+                if (tempMarker) map.removeLayer(tempMarker);
+
+                tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
+                document.getElementById('targetStatus').innerHTML = `✅ Current GPS locked!`;
+                document.getElementById('targetStatus').style.color = "#28a745";
+            } else {
+                alert("Acquiring GPS location... Please ensure device location is on.");
+            }
+        }
+
+        // Tap on map manually
         map.on('click', function(e) {
             selectedLat = e.latlng.lat;
             selectedLng = e.latlng.lng;
 
-            if (tempMarker) {
-                map.removeLayer(tempMarker);
-            }
+            if (tempMarker) map.removeLayer(tempMarker);
 
             tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
-            document.getElementById('targetStatus').innerHTML = `✅ Point selected! Ready to save.`;
+            document.getElementById('targetStatus').innerHTML = `✅ Point selected!`;
             document.getElementById('targetStatus').style.color = "#28a745";
         });
 
-        // 3. ADD SHOP TO GOOGLE SHEET
+        // 3. SAVE SHOP
         function addShop() {
             let name = document.getElementById('shopName').value.trim();
-            let customLink = document.getElementById('shopLink').value.trim();
 
             if (!name) {
                 alert("Please enter a shop name!");
                 return;
             }
-
-            let lat = selectedLat;
-            let lng = selectedLng;
-            let link = "";
-
-            if (customLink) {
-                link = customLink;
-                if (!lat || !lng) {
-                    lat = 14.7335; lng = 79.0545;
-                }
-            } else if (lat && lng) {
-                link = `https://maps.google.com/?q=${lat},${lng}`;
-            } else {
-                alert("Please tap a spot on the map first!");
+            if (!selectedLat || !selectedLng) {
+                alert("Please click 'Use My Current Location' or tap a spot on the map!");
                 return;
             }
 
+            let link = `https://maps.google.com/?q=${selectedLat},${selectedLng}`;
+
             fetch(SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify({ action: "addShop", name: name, lat: lat, lng: lng, link: link })
+                body: JSON.stringify({ action: "addShop", name: name, lat: selectedLat, lng: selectedLng, link: link })
             })
             .then(res => res.json())
             .then(data => {
                 if(data.status === "success") {
                     document.getElementById('shopName').value = "";
-                    document.getElementById('shopLink').value = "";
-                    document.getElementById('targetStatus').innerHTML = "📍 Tap map to select location";
+                    document.getElementById('targetStatus').innerHTML = "📍 Tap map or use button below";
                     document.getElementById('targetStatus').style.color = "#555";
                     
                     if (tempMarker) {
@@ -194,13 +224,26 @@
                     }
                     selectedLat = null;
                     selectedLng = null;
-
                     loadShops();
                 }
             });
         }
 
-        // 4. DELETE SHOP FROM GOOGLE SHEET
+        // 4. TOGGLE VISITED STATUS
+        function toggleShopStatus(id) {
+            fetch(SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify({ action: "toggleStatus", id: id })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === "success") {
+                    loadShops();
+                }
+            });
+        }
+
+        // 5. DELETE SHOP
         function deleteShop(id) {
             if(confirm("Are you sure you want to delete this shop?")) {
                 fetch(SCRIPT_URL, {
@@ -216,19 +259,14 @@
             }
         }
 
-        // 5. GPS LOCATION TRACKING & RECENTER BUTTON
+        // 6. GPS POSITION TRACKING
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(position) {
                 userCoords = [position.coords.latitude, position.coords.longitude];
 
                 if (!userMarker) {
                     userMarker = L.circleMarker(userCoords, {
-                        radius: 8,
-                        fillColor: "#007bff",
-                        color: "#ffffff",
-                        weight: 3,
-                        opacity: 1,
-                        fillOpacity: 0.95
+                        radius: 8, fillColor: "#007bff", color: "#ffffff", weight: 3, opacity: 1, fillOpacity: 0.95
                     }).addTo(map).bindPopup("You are here");
                 } else {
                     userMarker.setLatLng(userCoords);
@@ -242,11 +280,10 @@
             if (userCoords) {
                 map.flyTo(userCoords, 18, { animate: true, duration: 1.2 });
             } else {
-                alert("Acquiring GPS location... Make sure Location/GPS is turned on in your browser!");
+                alert("Acquiring GPS location... Make sure Location/GPS is turned on!");
             }
         }
 
-        // Initialize existing pins on load
         loadShops();
     </script>
 </body>
