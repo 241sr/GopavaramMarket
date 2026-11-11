@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multi-Town Shop Tracker</title>
     
-    <!-- Leaflet CSS -->
+    <!-- Leaflet 1.9.4 Base CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Leaflet Rotate Plugin CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-rotate-map@0.3.3/dist/leaflet-rotate.css" />
@@ -125,7 +125,6 @@
 <body>
 
     <div class="control-panel" id="mainPanel">
-        <!-- Always Visible Collapsible Header -->
         <div class="panel-header" onclick="togglePanel(event)">
             <b>Shop Tracker</b>
             <div style="display:flex; align-items:center;">
@@ -134,7 +133,6 @@
             </div>
         </div>
 
-        <!-- Collapsible Content -->
         <div class="panel-body" id="panelBody">
             <label style="font-size:11px; color:#555; margin-top:5px; display:block;">Select Town:</label>
             <select id="townSelect" onchange="filterTown()">
@@ -170,27 +168,24 @@
     <div id="map"></div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwArZSg4A_iTuZX37AF110RHTnsaTYKrR24W2EQ6frIGH6yJmviMHRq8KKBjdxZ6gzG/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzRXMkDEhxlooSKLdNa7EN-QOVxTR0hmtk-7U6R1gVjmATa3MAW_OJxMhelBycVcvna/exec";
 
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps'
         });
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '© OpenStreetMap' });
 
-        // INITIALIZE MAP WITH ROTATION ENABLED
         var map = L.map('map', {
             center: [14.7335, 79.0545],
             zoom: 15,
             layers: [googleHybrid],
-            rotate: true,             // Enables touch-rotate (two-finger twist)
+            rotate: true,
             bearing: 0,
             touchRotate: true
         });
 
-        // Add standard layers control
         L.control.layers({ "🛰️ Hybrid": googleHybrid, "🗺️ Street": osm }, null, { position: 'topleft' }).addTo(map);
 
-        // Explicitly instantiate rotate & compass needle control
         if (L.control.rotate) {
             L.control.rotate({
                 position: 'topleft',
@@ -202,6 +197,7 @@
         let shopMarkers = [];
         let selectedLat = null, selectedLng = null, tempMarker = null;
         let userCoords = null, userMarker = null;
+        let isProcessing = false;
 
         const now = new Date();
         let selectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -217,20 +213,14 @@
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
 
-        // HELPER: CALCULATE & FORMAT DISTANCE
         function getDistanceText(shopLat, shopLng) {
             if (!userCoords) return "Distance unavailable (waiting for GPS)";
             let from = L.latLng(userCoords[0], userCoords[1]);
             let to = L.latLng(shopLat, shopLng);
             let meters = from.distanceTo(to);
-            if (meters < 1000) {
-                return `${Math.round(meters)} m away`;
-            } else {
-                return `${(meters / 1000).toFixed(2)} km away`;
-            }
+            return (meters < 1000) ? `${Math.round(meters)} m away` : `${(meters / 1000).toFixed(2)} km away`;
         }
 
-        // GENERATE POPUP HTML DYNAMICALLY ON CLICK
         function buildPopupContent(shop) {
             const isVisited = (shop.status === "visited");
             const distText = getDistanceText(shop.lat, shop.lng);
@@ -245,7 +235,7 @@
                 <div class="distance-tag">📏 ${distText}</div><br>
                 <small>Status (${selectedMonth}): <b>${shop.status.toUpperCase()}</b></small><br><br>
                 <a href="${dirLink}" target="_blank" class="directions-link">🧭 Get Directions</a>
-                <button onclick="toggleStatus('${shop.id}')" style="background:${isVisited ? '#17a2b8' : '#28a745'};color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:5px;">
+                <button onclick="toggleStatus('${shop.id}')" style="background:${isVisited ? '#17a2b8' : '#28a745'};color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:6px;font-weight:bold;">
                     ${isVisited ? '↩️ Mark Pending' : '✅ Mark Visited'}
                 </button>
                 <button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;">
@@ -254,7 +244,6 @@
             `;
         }
 
-        // TOGGLE COLLAPSE LOGIC
         function togglePanel(e) {
             if (e && e.target.id === 'pendingCounter') return;
             const panel = document.getElementById('mainPanel');
@@ -269,7 +258,6 @@
             document.getElementById('collapseArrow').innerHTML = '▲';
         }
 
-        // MONTH SELECTOR
         function initMonthSelector() {
             const mSelect = document.getElementById('monthSelect');
             mSelect.innerHTML = "";
@@ -291,7 +279,6 @@
             loadData();
         }
 
-        // FETCH DATA
         function loadData() {
             fetch(`${SCRIPT_URL}?action=getData&month=${selectedMonth}`)
             .then(res => res.json())
@@ -307,10 +294,12 @@
                 if (data.towns.includes(currTown)) tSelect.value = currTown;
 
                 renderPins();
+                if (document.getElementById('pendingModal').style.display === "flex") {
+                    populatePendingList();
+                }
             });
         }
 
-        // RENDER PINS
         function renderPins() {
             shopMarkers.forEach(m => map.removeLayer(m));
             shopMarkers = [];
@@ -326,7 +315,7 @@
                 if (!isVisited) pendingCount++;
 
                 let marker = L.marker([shop.lat, shop.lng], { icon: isVisited ? greyPin : bluePin }).addTo(map);
-                marker.shopId = shop.id;
+                marker.shopId = shop.id.toString();
                 marker.shopData = shop;
 
                 marker.on('click', function() {
@@ -357,9 +346,15 @@
             renderPins();
         }
 
-        // PENDING MODAL
         function openPendingList(e) {
             if (e) e.stopPropagation();
+            populatePendingList();
+            document.getElementById('pendingModal').style.display = "flex";
+        }
+
+        function closePendingList() { document.getElementById('pendingModal').style.display = "none"; }
+
+        function populatePendingList() {
             const selectedTown = document.getElementById('townSelect').value;
             const filtered = (selectedTown === "ALL") ? allShops : allShops.filter(s => s.town === selectedTown);
             const pendingShops = filtered.filter(s => s.status !== "visited");
@@ -386,21 +381,17 @@
                     `;
                 }).join('');
             }
-            document.getElementById('pendingModal').style.display = "flex";
         }
-
-        function closePendingList() { document.getElementById('pendingModal').style.display = "none"; }
 
         function focusShop(lat, lng, id) {
             closePendingList();
             map.flyTo([lat, lng], 19, { animate: true, duration: 1 });
-            const targetMarker = shopMarkers.find(m => m.shopId === id);
+            const targetMarker = shopMarkers.find(m => m.shopId === id.toString());
             if (targetMarker) {
                 targetMarker.bindPopup(buildPopupContent(targetMarker.shopData)).openPopup();
             }
         }
 
-        // ADD, TOGGLE, DELETE
         function useCurrentLocation() {
             if (userCoords) {
                 selectedLat = userCoords[0];
@@ -445,23 +436,40 @@
                     document.getElementById('targetStatus').style.color = "#555";
                     if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
                     selectedLat = null; selectedLng = null;
-                    
                     togglePanel();
                     loadData();
                 }
             });
         }
 
+        // TOGGLE STATUS WITH INSTANT OPTIMISTIC FEEDBACK
         function toggleStatus(shopId) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            const cleanId = shopId.toString().trim();
+            const shop = allShops.find(s => s.id === cleanId);
+            if (shop) {
+                shop.status = (shop.status === "visited") ? "pending" : "visited";
+                renderPins();
+                if (document.getElementById('pendingModal').style.display === "flex") {
+                    populatePendingList();
+                }
+            }
+
             fetch(SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify({ action: "toggleStatus", shopId: shopId, month: selectedMonth })
+                body: JSON.stringify({ action: "toggleStatus", shopId: cleanId, month: selectedMonth })
             })
             .then(res => res.json())
             .then(data => {
-                if(data.status === "success") {
-                    loadData();
-                }
+                isProcessing = false;
+                loadData();
+            })
+            .catch(err => {
+                isProcessing = false;
+                console.error("Error updating status:", err);
+                loadData();
             });
         }
 
@@ -469,7 +477,7 @@
             if(confirm("Delete this shop permanently?")) {
                 fetch(SCRIPT_URL, {
                     method: "POST",
-                    body: JSON.stringify({ action: "deleteShop", shopId: shopId })
+                    body: JSON.stringify({ action: "deleteShop", shopId: shopId.toString().trim() })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -478,7 +486,6 @@
             }
         }
 
-        // GPS RECENTER & REAL-TIME TRACKING
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(pos) {
                 userCoords = [pos.coords.latitude, pos.coords.longitude];
