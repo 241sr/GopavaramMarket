@@ -35,7 +35,7 @@
         .panel-body {
             padding: 0 12px 12px 12px;
             transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
-            max-height: 500px;
+            max-height: 600px;
             opacity: 1;
         }
 
@@ -57,6 +57,7 @@
         }
         .btn-primary { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
         .btn-current-loc { background: #17a2b8; color: white; border: none; font-size: 11px; font-weight: bold; cursor: pointer; }
+        .btn-secondary { background: #6c757d; color: white; border: none; font-size: 11px; font-weight: bold; cursor: pointer; }
         .status-text { color: #555; font-size: 11px; margin-top: 4px; display: block; }
 
         .counter-badge {
@@ -85,7 +86,6 @@
             border-radius: 4px !important; padding: 2px 6px !important; font-size: 11px !important;
         }
 
-        /* Distance & Directions Buttons in Popup */
         .directions-link {
             display: block; text-align: center; background: #007bff; color: white !important;
             text-decoration: none; padding: 6px 8px; border-radius: 4px; font-weight: bold;
@@ -94,6 +94,10 @@
         .distance-tag {
             display: inline-block; background: #e8f4fd; color: #0062cc;
             padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 6px;
+        }
+
+        .sync-row {
+            display: flex; gap: 5px; margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px;
         }
 
         /* Modal */
@@ -148,6 +152,13 @@
             <input type="text" id="newShopTown" placeholder="Town Name (e.g. Badvel)">
             <input type="text" id="shopName" placeholder="Shop Name">
             <button type="button" class="btn-primary action-btn" onclick="addShop()">Save Shop</button>
+
+            <!-- Export / Import Controls -->
+            <div class="sync-row">
+                <button type="button" class="btn-secondary action-btn" onclick="exportTownShops()" title="Download shops file">📤 Export</button>
+                <button type="button" class="btn-secondary action-btn" onclick="document.getElementById('fileInput').click()" title="Import shops file">📥 Import</button>
+                <input type="file" id="fileInput" accept=".json" style="display:none;" onchange="importShops(event)">
+            </div>
         </div>
     </div>
 
@@ -168,7 +179,7 @@
     <div id="map"></div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzRXMkDEhxlooSKLdNa7EN-QOVxTR0hmtk-7U6R1gVjmATa3MAW_OJxMhelBycVcvna/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzX0m203pIPJXXy5j5K6Fg6tPhGkzmEXmCTrVKN5yoJ93kM2vOda82qufX8bxnCy21G/exec";
 
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps'
@@ -442,7 +453,6 @@
             });
         }
 
-        // TOGGLE STATUS WITH INSTANT OPTIMISTIC FEEDBACK
         function toggleStatus(shopId) {
             if (isProcessing) return;
             isProcessing = true;
@@ -486,6 +496,81 @@
             }
         }
 
+        // ================= EXPORT & IMPORT =================
+        function exportTownShops() {
+            const selectedTown = document.getElementById('townSelect').value;
+            const exportData = (selectedTown === "ALL") 
+                ? allShops 
+                : allShops.filter(s => s.town === selectedTown);
+
+            if (exportData.length === 0) {
+                alert("No shops available to export!");
+                return;
+            }
+
+            // Export pure essential mapping details (independent of month visits)
+            const cleanExport = exportData.map(s => ({
+                town: s.town,
+                name: s.name,
+                lat: s.lat,
+                lng: s.lng,
+                link: s.link
+            }));
+
+            const fileName = (selectedTown === "ALL" ? "All_Towns_Shops" : `${selectedTown}_Shops`) + ".json";
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cleanExport, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", fileName);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function importShops(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (!Array.isArray(imported) || imported.length === 0) {
+                        alert("Invalid or empty file format!");
+                        return;
+                    }
+
+                    if (confirm(`Import ${imported.length} shops into your database?`)) {
+                        document.getElementById('targetStatus').innerHTML = "⏳ Importing shops...";
+                        document.getElementById('targetStatus').style.color = "#007bff";
+
+                        fetch(SCRIPT_URL, {
+                            method: "POST",
+                            body: JSON.stringify({ action: "batchAddShops", shops: imported })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === "success") {
+                                alert(`Successfully imported ${data.count} shops!`);
+                                document.getElementById('targetStatus').innerHTML = "📍 Tap map or use GPS button";
+                                document.getElementById('targetStatus').style.color = "#555";
+                                loadData();
+                            }
+                        })
+                        .catch(err => {
+                            alert("Failed to import. Check connection.");
+                            console.error(err);
+                        });
+                    }
+                } catch (err) {
+                    alert("Error reading file! Please ensure it is a valid exported JSON file.");
+                }
+                event.target.value = ""; // Reset file input
+            };
+            reader.readAsText(file);
+        }
+
+        // ================= GPS TRACKING =================
         if (navigator.geolocation) {
             navigator.geolocation.watchPosition(function(pos) {
                 userCoords = [pos.coords.latitude, pos.coords.longitude];
