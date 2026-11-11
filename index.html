@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locality Shop Tracker</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        .control-panel {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: white; padding: 12px; border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 260px; font-size: 13px;
+        }
+        .control-panel input, .control-panel button {
+            width: 100%; margin-top: 6px; padding: 6px; box-sizing: border-box;
+        }
+        .control-panel button { background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .control-panel button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <div class="control-panel">
+        <b>Shop Mapper Dashboard</b><br>
+        <small>Add current spot or click map</small>
+        <input type="text" id="shopName" placeholder="Shop Name">
+        <input type="text" id="shopLat" placeholder="Latitude">
+        <input type="text" id="shopLng" placeholder="Longitude">
+        <button onclick="addShop()">Save Shop to Sheet</button>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+        const SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE";
+
+        var map = L.map('map').setView([14.45, 78.82], 15);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let shopMarkers = [];
+
+        // Fetch and render existing shops from Google Sheet database
+        function loadShops() {
+            fetch(SCRIPT_URL + "?action=getShops")
+            .then(response => response.json())
+            .then(shops => {
+                // Clear existing markers
+                shopMarkers.forEach(m => map.removeLayer(m));
+                shopMarkers = [];
+
+                shops.forEach(shop => {
+                    let popupContent = `<b>${shop.name}</b><br><br>` +
+                                       `<a href="${shop.link}" target="_blank">🗺️ Navigate</a><br><br>` +
+                                       `<button onclick="deleteShop('${shop.id}')" style="background:red;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Delete Shop</button>`;
+                    
+                    let marker = L.marker([shop.lat, shop.lng]).addTo(map).bindPopup(popupContent);
+                    shopMarkers.push(marker);
+                });
+            });
+        }
+
+        // Allow clicking on the map to auto-fill lat/lng for a new shop
+        map.on('click', function(e) {
+            document.getElementById('shopLat').value = e.latlng.lat.toFixed(6);
+            document.getElementById('shopLng').value = e.latlng.lng.toFixed(6);
+        });
+
+        // Add a new shop via Apps Script to Google Sheet
+        function addShop() {
+            let name = document.getElementById('shopName').value;
+            let lat = document.getElementById('shopLat').value;
+            let lng = document.getElementById('shopLng').value;
+
+            if (!name || !lat || !lng) {
+                alert("Please fill in the shop name and pick coordinates from the map!");
+                return;
+            }
+
+            let link = `https://maps.google.com/?q=${lat},${lng}`;
+
+            fetch(SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify({ action: "addShop", name: name, lat: lat, lng: lng, link: link })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === "success") {
+                    document.getElementById('shopName').value = "";
+                    document.getElementById('shopLat').value = "";
+                    document.getElementById('shopLng').value = "";
+                    loadShops(); // Refresh map pins
+                }
+            });
+        }
+
+        // Delete shop from Google Sheet
+        function deleteShop(id) {
+            if(confirm("Are you sure you want to delete this shop?")) {
+                fetch(SCRIPT_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ action: "deleteShop", id: id })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if(data.status === "success") {
+                        loadShops(); // Refresh map pins
+                    }
+                });
+            }
+        }
+
+        // Load shops on startup
+        loadShops();
+
+        // LIVE GPS TRACKING
+        if (navigator.geolocation) {
+            var userMarker = null;
+            navigator.geolocation.watchPosition(function(position) {
+                var lat = position.coords.latitude;
+                var lng = position.coords.longitude;
+
+                if (!userMarker) {
+                    userMarker = L.circleMarker([lat, lng], {
+                        radius: 8, fillColor: "#007bff", color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
+                    }).addTo(map).bindPopup("You are here");
+                } else {
+                    userMarker.setLatLng([lat, lng]);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
