@@ -18,6 +18,30 @@
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: sans-serif; }
         #map { height: 100vh; width: 100vw; }
 
+        /* Auth Lock Screen */
+        #authOverlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(18, 25, 33, 0.95); z-index: 5000;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .auth-card {
+            background: white; border-radius: 12px; padding: 24px;
+            width: 85%; max-width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            text-align: center; box-sizing: border-box;
+        }
+        .auth-card h3 { margin: 0 0 8px 0; color: #222; }
+        .auth-card p { font-size: 12px; color: #666; margin: 0 0 16px 0; }
+        .auth-input {
+            width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc;
+            border-radius: 6px; box-sizing: border-box; text-align: center;
+            letter-spacing: 4px; font-weight: bold; margin-bottom: 12px;
+        }
+        .auth-btn {
+            width: 100%; padding: 10px; background: #007bff; color: white; border: none;
+            border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer;
+        }
+        .auth-error { color: #dc3545; font-size: 12px; margin-top: 8px; display: none; }
+
         /* Floating Collapsible Dashboard */
         .control-panel {
             position: absolute; top: 10px; right: 10px; z-index: 1000;
@@ -35,7 +59,7 @@
         .panel-body {
             padding: 0 12px 12px 12px;
             transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
-            max-height: 600px;
+            max-height: 650px;
             opacity: 1;
         }
 
@@ -135,9 +159,25 @@
             background: #28a745; color: white; font-size: 9px; padding: 1px 4px;
             border-radius: 3px; font-weight: bold; margin-left: 4px; vertical-align: middle;
         }
+
+        .btn-logout {
+            background: none; border: none; color: #dc3545; font-size: 11px;
+            cursor: pointer; padding: 6px 0; margin-top: 4px; display: block; text-align: center; width: 100%;
+        }
     </style>
 </head>
 <body>
+
+    <!-- Access Lock Screen -->
+    <div id="authOverlay">
+        <div class="auth-card">
+            <h3>🔐 Access Verification</h3>
+            <p>Enter the security PIN to unlock the locality tracker</p>
+            <input type="password" id="pinInput" class="auth-input" placeholder="••••" maxlength="8" autofocus>
+            <button type="button" class="auth-btn" onclick="submitAuth()">Unlock Map</button>
+            <div id="authError" class="auth-error">Incorrect PIN. Access denied.</div>
+        </div>
+    </div>
 
     <div class="control-panel" id="mainPanel">
         <div class="panel-header" onclick="togglePanel(event)">
@@ -170,6 +210,8 @@
                 <button type="button" class="btn-secondary action-btn" onclick="document.getElementById('fileInput').click()" title="Import shops file">📥 Import</button>
                 <input type="file" id="fileInput" accept=".json" style="display:none;" onchange="importShops(event)">
             </div>
+
+            <button type="button" class="btn-logout" onclick="logout()">🔒 Sign Out</button>
         </div>
     </div>
 
@@ -191,7 +233,9 @@
     <div id="map"></div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzX0m203pIPJXXy5j5K6Fg6tPhGkzmEXmCTrVKN5yoJ93kM2vOda82qufX8bxnCy21G/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwx1zTpW-Sph9ICo61ZayWO0BpdpGP2156hKo0NlNadEzNCOLnrLLyvSXQMKmhf85Iu/exec";
+
+        let currentPin = localStorage.getItem("tracker_pin") || "";
 
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps'
@@ -236,7 +280,61 @@
             iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
         });
 
-        // GEODESIC DISTANCE CALCULATIONS
+        // ================= AUTHENTICATION LOGIC =================
+        function checkInitialAuth() {
+            if (currentPin) {
+                testPin(currentPin, function(valid) {
+                    if (valid) {
+                        document.getElementById('authOverlay').style.display = "none";
+                    } else {
+                        localStorage.removeItem("tracker_pin");
+                        currentPin = "";
+                        document.getElementById('authOverlay').style.display = "flex";
+                    }
+                });
+            } else {
+                document.getElementById('authOverlay').style.display = "flex";
+            }
+        }
+
+        function submitAuth() {
+            const entered = document.getElementById('pinInput').value.trim();
+            if (!entered) return;
+
+            testPin(entered, function(valid) {
+                if (valid) {
+                    currentPin = entered;
+                    localStorage.setItem("tracker_pin", entered);
+                    document.getElementById('authOverlay').style.display = "none";
+                    document.getElementById('authError').style.display = "none";
+                    loadData();
+                } else {
+                    document.getElementById('authError').style.display = "block";
+                }
+            });
+        }
+
+        function testPin(pin, callback) {
+            fetch(`${SCRIPT_URL}?action=getData&month=${selectedMonth}&pin=${encodeURIComponent(pin)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "unauthorized") callback(false);
+                else {
+                    handleLoadedData(data);
+                    callback(true);
+                }
+            })
+            .catch(() => callback(false));
+        }
+
+        function logout() {
+            localStorage.removeItem("tracker_pin");
+            currentPin = "";
+            document.getElementById('pinInput').value = "";
+            document.getElementById('authOverlay').style.display = "flex";
+        }
+
+        // ================= DISTANCE & POPUP =================
         function getRawMeters(shopLat, shopLng) {
             if (!userCoords) return Infinity;
             return L.latLng(userCoords[0], userCoords[1]).distanceTo(L.latLng(shopLat, shopLng));
@@ -307,24 +405,33 @@
         }
 
         function loadData() {
-            fetch(`${SCRIPT_URL}?action=getData&month=${selectedMonth}`)
+            if (!currentPin) return;
+            fetch(`${SCRIPT_URL}?action=getData&month=${selectedMonth}&pin=${encodeURIComponent(currentPin)}`)
             .then(res => res.json())
             .then(data => {
-                allShops = data.shops;
-                
-                const tSelect = document.getElementById('townSelect');
-                const currTown = tSelect.value;
-                tSelect.innerHTML = `<option value="ALL">🌐 All Towns</option>`;
-                data.towns.forEach(t => {
-                    tSelect.innerHTML += `<option value="${t}">${t}</option>`;
-                });
-                if (data.towns.includes(currTown)) tSelect.value = currTown;
-
-                renderPins();
-                if (document.getElementById('pendingModal').style.display === "flex") {
-                    populatePendingList();
+                if (data.status === "unauthorized") {
+                    logout();
+                    return;
                 }
+                handleLoadedData(data);
             });
+        }
+
+        function handleLoadedData(data) {
+            allShops = data.shops || [];
+            
+            const tSelect = document.getElementById('townSelect');
+            const currTown = tSelect.value;
+            tSelect.innerHTML = `<option value="ALL">🌐 All Towns</option>`;
+            (data.towns || []).forEach(t => {
+                tSelect.innerHTML += `<option value="${t}">${t}</option>`;
+            });
+            if ((data.towns || []).includes(currTown)) tSelect.value = currTown;
+
+            renderPins();
+            if (document.getElementById('pendingModal').style.display === "flex") {
+                populatePendingList();
+            }
         }
 
         function renderPins() {
@@ -373,7 +480,6 @@
             renderPins();
         }
 
-        // PENDING MODAL WITH DISTANCE SORTING
         function openPendingList(e) {
             if (e) e.stopPropagation();
             document.getElementById('modalSearchInput').value = "";
@@ -392,15 +498,12 @@
             
             let pendingShops = filtered.filter(s => s.status !== "visited");
 
-            // Attach dynamic distance meters to each shop
             pendingShops.forEach(s => {
                 s.distanceMeters = getRawMeters(s.lat, s.lng);
             });
 
-            // Sort ascending by distance (nearest to farthest)
             pendingShops.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-            // Filter if user typed in search bar
             if (searchTerm) {
                 pendingShops = pendingShops.filter(s => s.name.toLowerCase().includes(searchTerm) || s.town.toLowerCase().includes(searchTerm));
             }
@@ -450,7 +553,6 @@
             }
         }
 
-        // GPS LOCATION & RECENTER
         function useCurrentLocation() {
             if (userCoords) {
                 selectedLat = userCoords[0];
@@ -485,7 +587,10 @@
 
             fetch(SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify({ action: "addShop", town: town, name: name, lat: selectedLat, lng: selectedLng, link: link })
+                body: JSON.stringify({ 
+                    action: "addShop", pin: currentPin, town: town, 
+                    name: name, lat: selectedLat, lng: selectedLng, link: link 
+                })
             })
             .then(res => res.json())
             .then(data => {
@@ -497,6 +602,8 @@
                     selectedLat = null; selectedLng = null;
                     togglePanel();
                     loadData();
+                } else if (data.status === "unauthorized") {
+                    logout();
                 }
             });
         }
@@ -517,12 +624,13 @@
 
             fetch(SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify({ action: "toggleStatus", shopId: cleanId, month: selectedMonth })
+                body: JSON.stringify({ action: "toggleStatus", pin: currentPin, shopId: cleanId, month: selectedMonth })
             })
             .then(res => res.json())
             .then(data => {
                 isProcessing = false;
-                loadData();
+                if (data.status === "unauthorized") logout();
+                else loadData();
             })
             .catch(err => {
                 isProcessing = false;
@@ -535,16 +643,16 @@
             if(confirm("Delete this shop permanently?")) {
                 fetch(SCRIPT_URL, {
                     method: "POST",
-                    body: JSON.stringify({ action: "deleteShop", shopId: shopId.toString().trim() })
+                    body: JSON.stringify({ action: "deleteShop", pin: currentPin, shopId: shopId.toString().trim() })
                 })
                 .then(res => res.json())
                 .then(data => {
-                    if(data.status === "success") loadData();
+                    if (data.status === "unauthorized") logout();
+                    else if(data.status === "success") loadData();
                 });
             }
         }
 
-        // EXPORT & IMPORT
         function exportTownShops() {
             const selectedTown = document.getElementById('townSelect').value;
             const exportData = (selectedTown === "ALL") 
@@ -593,7 +701,7 @@
 
                         fetch(SCRIPT_URL, {
                             method: "POST",
-                            body: JSON.stringify({ action: "batchAddShops", shops: imported })
+                            body: JSON.stringify({ action: "batchAddShops", pin: currentPin, shops: imported })
                         })
                         .then(res => res.json())
                         .then(data => {
@@ -602,6 +710,8 @@
                                 document.getElementById('targetStatus').innerHTML = "📍 Tap map or use GPS button";
                                 document.getElementById('targetStatus').style.color = "#555";
                                 loadData();
+                            } else if (data.status === "unauthorized") {
+                                logout();
                             }
                         })
                         .catch(err => {
@@ -636,7 +746,8 @@
             else alert("Acquiring GPS location...");
         }
 
-        loadData();
+        // Check authentication on startup
+        checkInitialAuth();
     </script>
 </body>
 </html>
