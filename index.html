@@ -7,6 +7,8 @@
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Rotate Plugin CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-rotate-map@0.3.3/dist/leaflet-rotate.css" />
     
     <!-- Leaflet JS & Rotate Plugin -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -168,7 +170,6 @@
     <div id="map"></div>
 
     <script>
-        // PASTE YOUR SCRIPT URL HERE:
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwArZSg4A_iTuZX37AF110RHTnsaTYKrR24W2EQ6frIGH6yJmviMHRq8KKBjdxZ6gzG/exec";
 
         const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
@@ -182,14 +183,20 @@
             zoom: 15,
             layers: [googleHybrid],
             rotate: true,             // Enables touch-rotate (two-finger twist)
-            touchRotate: true,        // Touch gestures on mobile
-            rotateControl: {          // Adds compass button to reset North
-                closeOnZeroBearing: false,
-                position: 'topleft'
-            }
+            bearing: 0,
+            touchRotate: true
         });
 
+        // Add standard layers control
         L.control.layers({ "🛰️ Hybrid": googleHybrid, "🗺️ Street": osm }, null, { position: 'topleft' }).addTo(map);
+
+        // Explicitly instantiate rotate & compass needle control
+        if (L.control.rotate) {
+            L.control.rotate({
+                position: 'topleft',
+                closeOnZeroBearing: false
+            }).addTo(map);
+        }
 
         let allShops = [];
         let shopMarkers = [];
@@ -228,7 +235,6 @@
             const isVisited = (shop.status === "visited");
             const distText = getDistanceText(shop.lat, shop.lng);
             
-            // Directions link starts from current location if available
             let dirLink = userCoords 
                 ? `https://www.google.com/maps/dir/?api=1&origin=${userCoords[0]},${userCoords[1]}&destination=${shop.lat},${shop.lng}`
                 : `https://www.google.com/maps/dir/?api=1&destination=${shop.lat},${shop.lng}`;
@@ -323,7 +329,6 @@
                 marker.shopId = shop.id;
                 marker.shopData = shop;
 
-                // Bind dynamic popup so distance updates on tap
                 marker.on('click', function() {
                     marker.bindPopup(buildPopupContent(shop)).openPopup();
                 });
