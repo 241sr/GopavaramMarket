@@ -400,35 +400,54 @@
         }
 
         function buildPopupContent(shop) {
-            const isVisited = (shop.status === "visited");
-            const meters = getRawMeters(shop.lat, shop.lng);
-            const distText = formatDistance(meters);
-            
-            let dirLink = userCoords 
-                ? `https://www.google.com/maps/dir/?api=1&origin=${userCoords[0]},${userCoords[1]}&destination=${shop.lat},${shop.lng}`
-                : `https://www.google.com/maps/dir/?api=1&destination=${shop.lat},${shop.lng}`;
+    const isVisited = (shop.status === "visited");
+    const meters = getRawMeters(shop.lat, shop.lng);
+    const distText = formatDistance(meters);
+    
+    let dirLink = userCoords 
+        ? `https://www.google.com/maps/dir/?api=1&origin=${userCoords[0]},${userCoords[1]}&destination=${shop.lat},${shop.lng}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${shop.lat},${shop.lng}`;
 
-            let imgTag = shop.photoUrl 
-                ? `<img src="${shop.photoUrl}" class="popup-img" alt="Store Front" onerror="this.style.display='none'">` 
-                : '';
+    // Convert Drive thumbnail link to a reliable direct preview link if needed
+    let imgBlock = '';
+    if (shop.photoUrl && shop.photoUrl.trim() !== '') {
+        let rawUrl = shop.photoUrl.trim();
+        let fileIdMatch = rawUrl.match(/id=([a-zA-Z0-9_-]+)/);
+        let directSrc = fileIdMatch ? `https://lh3.googleusercontent.com/d/${fileIdMatch[1]}` : rawUrl;
 
-            return `
-                <div style="min-width: 180px;">
-                    ${imgTag}
-                    <b>${shop.name}</b><br>
-                    <small style="color:#666;">Town: ${shop.town}</small><br>
-                    <div class="distance-tag">📏 ${distText}</div><br>
-                    <small>Status (${selectedMonth}): <b>${shop.status.toUpperCase()}</b></small><br><br>
-                    <a href="${dirLink}" target="_blank" class="directions-link">🧭 Get Directions</a>
-                    <button onclick="toggleStatus('${shop.id}')" style="background:${isVisited ? '#17a2b8' : '#28a745'};color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:6px;font-weight:bold;">
-                        ${isVisited ? '↩️ Mark Pending' : '✅ Mark Visited'}
-                    </button>
-                    <button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;">
-                        🗑️ Delete Shop
-                    </button>
-                </div>
-            `;
-        }
+        imgBlock = `
+            <div style="margin-bottom:8px;">
+                <a href="${directSrc}" target="_blank" title="Click to view full photo">
+                    <img src="${directSrc}" class="popup-img" alt="Store Front" 
+                         style="width:100%; height:110px; object-fit:cover; border-radius:6px; display:block; border:1px solid #ddd;"
+                         onerror="this.onerror=null; this.src='https://placehold.co/240x110?text=Photo+Unavailable';">
+                </a>
+                <a href="${directSrc}" target="_blank" style="font-size:11px; color:#007bff; display:block; text-align:center; margin-top:2px; text-decoration:none;">
+                    🔍 Tap image or click here to expand
+                </a>
+            </div>
+        `;
+    } else {
+        imgBlock = `<div style="font-size:11px; color:#888; margin-bottom:6px; font-style:italic;">📷 No photo uploaded for this shop</div>`;
+    }
+
+    return `
+        <div style="min-width: 190px;">
+            ${imgBlock}
+            <b>${shop.name}</b><br>
+            <small style="color:#666;">Town: ${shop.town}</small><br>
+            <div class="distance-tag">📏 ${distText}</div><br>
+            <small>Status (${selectedMonth}): <b>${shop.status.toUpperCase()}</b></small><br><br>
+            <a href="${dirLink}" target="_blank" class="directions-link">🧭 Get Directions</a>
+            <button onclick="toggleStatus('${shop.id}')" style="background:${isVisited ? '#17a2b8' : '#28a745'};color:white;border:none;padding:6px 8px;border-radius:4px;cursor:pointer;width:100%;margin-bottom:6px;font-weight:bold;">
+                ${isVisited ? '↩️ Mark Pending' : '✅ Mark Visited'}
+            </button>
+            <button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;width:100%;">
+                🗑️ Delete Shop
+            </button>
+        </div>
+    `;
+}
 
         function togglePanel(e) {
             if (e && e.target.id === 'pendingCounter') return;
