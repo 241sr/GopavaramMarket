@@ -9,17 +9,47 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: sans-serif; }
         #map { height: 100vh; width: 100vw; }
+
+        /* Floating Input Dashboard */
         .control-panel {
             position: absolute; top: 10px; right: 10px; z-index: 1000;
-            background: white; padding: 12px; border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 260px; font-size: 13px;
+            background: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 250px; font-size: 13px;
         }
         .control-panel input, .control-panel button {
             width: 100%; margin-top: 6px; padding: 8px; box-sizing: border-box;
         }
-        .control-panel button { background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .control-panel button { 
+            background: #007bff; color: white; border: none; border-radius: 4px; 
+            cursor: pointer; font-weight: bold; 
+        }
         .control-panel button:hover { background: #0056b3; }
         .status-text { color: #555; font-size: 11px; margin-top: 4px; display: block; }
+
+        /* Floating GPS Recenter Button */
+        .gps-btn {
+            position: absolute; bottom: 25px; right: 20px; z-index: 1000;
+            background: white; border: none; border-radius: 50%;
+            width: 48px; height: 48px; box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; cursor: pointer;
+        }
+        .gps-btn:active { background: #e0e0e0; }
+
+        /* Custom Permanent Label on Pins */
+        .shop-label {
+            background: rgba(0, 0, 0, 0.8) !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 4px !important;
+            padding: 2px 6px !important;
+            font-size: 11px !important;
+            font-weight: bold !important;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+        }
+        .leaflet-tooltip-bottom:before {
+            border-bottom-color: rgba(0, 0, 0, 0.8) !important;
+        }
     </style>
 </head>
 <body>
@@ -32,6 +62,9 @@
         <button onclick="addShop()">Save Shop</button>
     </div>
 
+    <!-- Live GPS Recenter Button -->
+    <button class="gps-btn" onclick="goToCurrentLocation()" title="Locate Me">🎯</button>
+
     <div id="map"></div>
 
     <!-- Leaflet JS -->
@@ -40,19 +73,42 @@
         // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwrFXO0nyEIlaS86O60GvzKDrl1Fxm8K3n6glruXNTSUcSjUr__mbhxyFFru8_JTfYf/exec";
 
-        var map = L.map('map').setView([14.45, 78.82], 15);
+        // 1. BASE MAP LAYERS
+        // OpenStreetMap (Standard Street Map)
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 20,
+            attribution: '© OpenStreetMap'
+        });
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+        // Google Hybrid (Satellite Imagery + Street Labels)
+        const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: '© Google Maps'
+        });
+
+        // Initialize map with Google Hybrid by default
+        var map = L.map('map', {
+            center: [14.7335, 79.0545], // Badvel town area center coordinates
+            zoom: 16,
+            layers: [googleHybrid]
+        });
+
+        // Layer Switcher Control (Top-Left toggle)
+        const baseMaps = {
+            "🛰️ Satellite / Hybrid": googleHybrid,
+            "🗺️ Street Map": osm
+        };
+        L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
 
         let shopMarkers = [];
         let selectedLat = null;
         let selectedLng = null;
         let tempMarker = null;
+        let userCoords = null;
+        let userMarker = null;
 
-        // Fetch and render existing shops from Google Sheet database
+        // 2. FETCH AND DISPLAY SAVED SHOPS WITH PERMANENT LABELS
         function loadShops() {
             fetch(SCRIPT_URL + "?action=getShops")
             .then(response => response.json())
@@ -62,37 +118,41 @@
 
                 shops.forEach(shop => {
                     let popupContent = `<b>${shop.name}</b><br><br>` +
-                                       `<a href="${shop.link}" target="_blank">🗺️ Navigate</a><br><br>` +
-                                       `<button onclick="deleteShop('${shop.id}')" style="background:red;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Delete Shop</button>`;
+                                       `<a href="${shop.link}" target="_blank">🗺️ Open in Google Maps</a><br><br>` +
+                                       `<button onclick="deleteShop('${shop.id}')" style="background:#dc3545;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;">Delete Shop</button>`;
                     
                     let marker = L.marker([shop.lat, shop.lng]).addTo(map).bindPopup(popupContent);
+
+                    // Add visible shop name directly on/below pin
+                    marker.bindTooltip(shop.name, {
+                        permanent: true,
+                        direction: 'bottom',
+                        className: 'shop-label',
+                        offset: [0, 8]
+                    });
+
                     shopMarkers.push(marker);
                 });
             });
         }
 
-        // Tap on map to drop a temporary pin and record coordinates instantly
+        // Tap on map to set spot
         map.on('click', function(e) {
             selectedLat = e.latlng.lat;
             selectedLng = e.latlng.lng;
 
-            // Remove previous temp pin if it exists
             if (tempMarker) {
                 map.removeLayer(tempMarker);
             }
 
-            // Drop a visual temporary red/orange highlight pin
-            tempMarker = L.marker([selectedLat, selectedLng], {
-                opacity: 0.7
-            }).addTo(map).bindPopup("Selected Location").openPopup();
-
-            document.getElementById('targetStatus').innerHTML = `✅ Location pinned! Ready to save.`;
-            document.getElementById('targetStatus').style.color = "green";
+            tempMarker = L.marker([selectedLat, selectedLng], { opacity: 0.8 }).addTo(map);
+            document.getElementById('targetStatus').innerHTML = `✅ Point selected! Ready to save.`;
+            document.getElementById('targetStatus').style.color = "#28a745";
         });
 
-        // Add a new shop via Apps Script to Google Sheet
+        // 3. ADD SHOP TO GOOGLE SHEET
         function addShop() {
-            let name = document.getElementById('shopName').value;
+            let name = document.getElementById('shopName').value.trim();
             let customLink = document.getElementById('shopLink').value.trim();
 
             if (!name) {
@@ -104,21 +164,18 @@
             let lng = selectedLng;
             let link = "";
 
-            // If user pasted a manual Google Maps link instead of clicking the map, use it
             if (customLink) {
                 link = customLink;
-                // Try to extract lat/lng if it's a standard coords link, otherwise fallback to defaults if not clicked
                 if (!lat || !lng) {
-                    lat = 14.45; lng = 78.82; // Fallback center if no map pin was tapped
+                    lat = 14.7335; lng = 79.0545;
                 }
             } else if (lat && lng) {
                 link = `https://maps.google.com/?q=${lat},${lng}`;
             } else {
-                alert("Please either tap a spot on the map OR paste a Google Maps link!");
+                alert("Please tap a spot on the map first!");
                 return;
             }
 
-            // Send data to Google Sheet
             fetch(SCRIPT_URL, {
                 method: "POST",
                 body: JSON.stringify({ action: "addShop", name: name, lat: lat, lng: lng, link: link })
@@ -138,12 +195,12 @@
                     selectedLat = null;
                     selectedLng = null;
 
-                    loadShops(); // Refresh map pins instantly
+                    loadShops();
                 }
             });
         }
 
-        // Delete shop from Google Sheet
+        // 4. DELETE SHOP FROM GOOGLE SHEET
         function deleteShop(id) {
             if(confirm("Are you sure you want to delete this shop?")) {
                 fetch(SCRIPT_URL, {
@@ -159,25 +216,38 @@
             }
         }
 
-        // Load shops on startup
-        loadShops();
-
-        // LIVE GPS TRACKING
+        // 5. GPS LOCATION TRACKING & RECENTER BUTTON
         if (navigator.geolocation) {
-            var userMarker = null;
             navigator.geolocation.watchPosition(function(position) {
-                var lat = position.coords.latitude;
-                var lng = position.coords.longitude;
+                userCoords = [position.coords.latitude, position.coords.longitude];
 
                 if (!userMarker) {
-                    userMarker = L.circleMarker([lat, lng], {
-                        radius: 8, fillColor: "#007bff", color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
+                    userMarker = L.circleMarker(userCoords, {
+                        radius: 8,
+                        fillColor: "#007bff",
+                        color: "#ffffff",
+                        weight: 3,
+                        opacity: 1,
+                        fillOpacity: 0.95
                     }).addTo(map).bindPopup("You are here");
                 } else {
-                    userMarker.setLatLng([lat, lng]);
+                    userMarker.setLatLng(userCoords);
                 }
-            });
+            }, function(err) {
+                console.log("GPS Location Error: " + err.message);
+            }, { enableHighAccuracy: true });
         }
+
+        function goToCurrentLocation() {
+            if (userCoords) {
+                map.flyTo(userCoords, 18, { animate: true, duration: 1.2 });
+            } else {
+                alert("Acquiring GPS location... Make sure Location/GPS is turned on in your browser!");
+            }
+        }
+
+        // Initialize existing pins on load
+        loadShops();
     </script>
 </body>
 </html>
