@@ -15,21 +15,21 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.3); width: 260px; font-size: 13px;
         }
         .control-panel input, .control-panel button {
-            width: 100%; margin-top: 6px; padding: 6px; box-sizing: border-box;
+            width: 100%; margin-top: 6px; padding: 8px; box-sizing: border-box;
         }
-        .control-panel button { background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .control-panel button { background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         .control-panel button:hover { background: #0056b3; }
+        .status-text { color: #555; font-size: 11px; margin-top: 4px; display: block; }
     </style>
 </head>
 <body>
 
     <div class="control-panel">
-        <b>Shop Mapper Dashboard</b><br>
-        <small>Add current spot or click map</small>
+        <b>Shop Mapper</b><br>
+        <span class="status-text" id="targetStatus">📍 Tap map to select location</span>
         <input type="text" id="shopName" placeholder="Shop Name">
-        <input type="text" id="shopLat" placeholder="Latitude">
-        <input type="text" id="shopLng" placeholder="Longitude">
-        <button onclick="addShop()">Save Shop to Sheet</button>
+        <input type="text" id="shopLink" placeholder="Or paste Maps Link (Optional)">
+        <button onclick="addShop()">Save Shop</button>
     </div>
 
     <div id="map"></div>
@@ -48,13 +48,15 @@
         }).addTo(map);
 
         let shopMarkers = [];
+        let selectedLat = null;
+        let selectedLng = null;
+        let tempMarker = null;
 
         // Fetch and render existing shops from Google Sheet database
         function loadShops() {
             fetch(SCRIPT_URL + "?action=getShops")
             .then(response => response.json())
             .then(shops => {
-                // Clear existing markers
                 shopMarkers.forEach(m => map.removeLayer(m));
                 shopMarkers = [];
 
@@ -69,25 +71,54 @@
             });
         }
 
-        // Allow clicking on the map to auto-fill lat/lng for a new shop
+        // Tap on map to drop a temporary pin and record coordinates instantly
         map.on('click', function(e) {
-            document.getElementById('shopLat').value = e.latlng.lat.toFixed(6);
-            document.getElementById('shopLng').value = e.latlng.lng.toFixed(6);
+            selectedLat = e.latlng.lat;
+            selectedLng = e.latlng.lng;
+
+            // Remove previous temp pin if it exists
+            if (tempMarker) {
+                map.removeLayer(tempMarker);
+            }
+
+            // Drop a visual temporary red/orange highlight pin
+            tempMarker = L.marker([selectedLat, selectedLng], {
+                opacity: 0.7
+            }).addTo(map).bindPopup("Selected Location").openPopup();
+
+            document.getElementById('targetStatus').innerHTML = `✅ Location pinned! Ready to save.`;
+            document.getElementById('targetStatus').style.color = "green";
         });
 
         // Add a new shop via Apps Script to Google Sheet
         function addShop() {
             let name = document.getElementById('shopName').value;
-            let lat = document.getElementById('shopLat').value;
-            let lng = document.getElementById('shopLng').value;
+            let customLink = document.getElementById('shopLink').value.trim();
 
-            if (!name || !lat || !lng) {
-                alert("Please fill in the shop name and pick coordinates from the map!");
+            if (!name) {
+                alert("Please enter a shop name!");
                 return;
             }
 
-            let link = `https://maps.google.com/?q=${lat},${lng}`;
+            let lat = selectedLat;
+            let lng = selectedLng;
+            let link = "";
 
+            // If user pasted a manual Google Maps link instead of clicking the map, use it
+            if (customLink) {
+                link = customLink;
+                // Try to extract lat/lng if it's a standard coords link, otherwise fallback to defaults if not clicked
+                if (!lat || !lng) {
+                    lat = 14.45; lng = 78.82; // Fallback center if no map pin was tapped
+                }
+            } else if (lat && lng) {
+                link = `https://maps.google.com/?q=${lat},${lng}`;
+            } else {
+                alert("Please either tap a spot on the map OR paste a Google Maps link!");
+                return;
+            }
+
+            // Send data to Google Sheet
             fetch(SCRIPT_URL, {
                 method: "POST",
                 body: JSON.stringify({ action: "addShop", name: name, lat: lat, lng: lng, link: link })
@@ -96,9 +127,18 @@
             .then(data => {
                 if(data.status === "success") {
                     document.getElementById('shopName').value = "";
-                    document.getElementById('shopLat').value = "";
-                    document.getElementById('shopLng').value = "";
-                    loadShops(); // Refresh map pins
+                    document.getElementById('shopLink').value = "";
+                    document.getElementById('targetStatus').innerHTML = "📍 Tap map to select location";
+                    document.getElementById('targetStatus').style.color = "#555";
+                    
+                    if (tempMarker) {
+                        map.removeLayer(tempMarker);
+                        tempMarker = null;
+                    }
+                    selectedLat = null;
+                    selectedLng = null;
+
+                    loadShops(); // Refresh map pins instantly
                 }
             });
         }
@@ -113,7 +153,7 @@
                 .then(res => res.json())
                 .then(data => {
                     if(data.status === "success") {
-                        loadShops(); // Refresh map pins
+                        loadShops();
                     }
                 });
             }
